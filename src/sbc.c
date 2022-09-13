@@ -48,8 +48,14 @@ void sbc_synthesize_8(struct sbc_dstate *state,
 
 
 /**
+ * Macros
+ * MIN/MAX  Minimum and maximum between 2 values
+ * SAT16    Signed saturation on 16 bits
  * Saturate on 16 bits
  */
+
+#define SBC_MIN(a, b)  ( (a) < (b) ?  (a) : (b) )
+#define SBC_MAX(a, b)  ( (a) > (b) ?  (a) : (b) )
 
 #define SBC_SAT16(v) (int16_t)\
     ( (v) > INT16_MAX ? INT16_MAX : \
@@ -173,15 +179,24 @@ static bool check_frame(const struct sbc_frame *frame)
             (!frame->msbc && frame->nblocks % 4 != 0))
         return false;
 
-    if ((unsigned)(frame->nsubbands - 4) > 12 || frame->nsubbands % 4 != 0)
+    if ((unsigned)(frame->nsubbands - 4) > 4 || frame->nsubbands % 4 != 0)
         return false;
 
     /* --- Validate the bitpool value --- */
 
-    bool stereo_mode = frame->mode == SBC_MODE_STEREO ||
-                       frame->mode == SBC_MODE_JOINT_STEREO;
+    bool two_channels = (frame->mode != SBC_MODE_MONO);
+    bool dual_mode = (frame->mode == SBC_MODE_DUAL_CHANNEL);
+    bool joint_mode = (frame->mode == SBC_MODE_JOINT_STEREO);
+    bool stereo_mode = joint_mode || (frame->mode == SBC_MODE_STEREO);
 
-    int max_bitpool = (16 << stereo_mode) * frame->nsubbands;
+    int max_bits =
+        ((16 * frame->nsubbands * frame->nblocks) << two_channels) -
+        (SBC_HEADER_SIZE * 8) -
+        ((4 * frame->nsubbands) << two_channels) -
+        (joint_mode ? frame->nsubbands : 0);
+
+    int max_bitpool = SBC_MIN( max_bits / (frame->nblocks << dual_mode),
+                               (16 << stereo_mode) * frame->nsubbands );
 
     return frame->bitpool <= max_bitpool;
 }
